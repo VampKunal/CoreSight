@@ -5,6 +5,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require("cors");
 const testRoutes = require('./routes/testRoutes');
+const workoutRoutes = require('./routes/workoutRoutes');
 const connectDB = require("./config/db");
 const authRoutes =require("./routes/authRoutes");
 const app = express();
@@ -16,7 +17,7 @@ app.use(cors());
 app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/test', testRoutes);
-
+app.use('/api/workouts', workoutRoutes);
 app.get('/', (req, res) => {
     res.json({ message: 'Welcome to the FitTrack API!' });
 });
