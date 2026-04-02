@@ -7,14 +7,19 @@ const cors = require("cors");
 const testRoutes = require('./routes/testRoutes');
 const workoutRoutes = require('./routes/workoutRoutes');
 const connectDB = require("./config/db");
-const authRoutes =require("./routes/authRoutes");
+const authRoutes =require("./routes/authRoutes");;
+const exerciseRoutes = require('./routes/exerciseRoutes');
+const { connnectRabbitMQ } = require('./services/queueProducer');
+
 const app = express();
 
 connectDB();
 
 app.use(cors());
-
+connnectRabbitMQ();
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use("/api/exercises", exerciseRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/test', testRoutes);
 app.use('/api/workouts', workoutRoutes);

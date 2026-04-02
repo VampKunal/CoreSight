@@ -1,6 +1,6 @@
 const  workoutmodel =require("../models/workout");
 const User = require("../models/user");
-
+const { sendToQueue } = require("../services/queueProducer");
 const addWorkout =async(req,res)=>{
     try {
         const {exercise, duration, caloriesBurned} = req.body;
@@ -9,6 +9,10 @@ const addWorkout =async(req,res)=>{
             exercise,
             duration,
             caloriesBurned
+        });
+        await sendToQueue({
+            userId: req.user.userID,
+            exercise,
         });
         await workoutEntry.save();
         res.status(201).json({message:"Workout added successfully"});

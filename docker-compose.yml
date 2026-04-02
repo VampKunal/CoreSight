@@ -12,5 +12,31 @@ services:
     volumes:
       - mongo_data:/data/db
 
+    
+
+  redis:
+      image: redis:alpine
+      container_name: fittrack-redis
+      restart: always
+      ports:
+        - "6379:6379"
+
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: fittrack-rabbitmq
+    restart: always
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+        
+
+
+
+
+  
+
 volumes:
   mongo_data:
+  redis_data:
+  rabbitmq_data:
