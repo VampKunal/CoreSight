@@ -1,7 +1,7 @@
 const  workoutmodel =require("../models/workout");
 const User = require("../models/user");
 const { sendToQueue } = require("../services/queueProducer");
-const addWorkout =async(req,res)=>{
+const addWorkout =async(req,res,next)=>{
     try {
         const {exercise, duration, caloriesBurned} = req.body;
         const workoutEntry = new workoutmodel({
@@ -17,27 +17,29 @@ const addWorkout =async(req,res)=>{
         await workoutEntry.save();
         res.status(201).json({message:"Workout added successfully"});
     } catch (error) {
-        res.status(500).json({message:error.message});
-
+        next(error);
     }
 }
 
-const getWorkouts = async(req,res)=>{
+const getWorkouts = async(req,res,next)=>{
     try {
-        const workout = await workoutmodel.find({userId:req.user.userID});
-        res.status(200).json(workout);
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+        const workouts = await workoutmodel.find({userId:req.user.userID}).skip(skip).limit(limit);
+        res.status(200).json(workouts);
     } catch (error) {
-        res.status(500).json({message:error.message});
+        next(error);
     }
 }
 
-const deleteWorkout = async(req,res)=>{
+const deleteWorkout = async(req,res,next)=>{
     try {
         const {id}=req.params;
         await workoutmodel.findByIdAndDelete(id);
         res.status(200).json({message:"Workout deleted successfully"});
     } catch (error) {
-        res.status(500).json({message:error.message});
+        next(error);
     }       
 
 }

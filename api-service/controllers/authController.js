@@ -4,16 +4,21 @@ const jwt = require('jsonwebtoken');
 const {validationResult} = require('express-validator');
 
 
-const register = async (req,res) => {
+const register = async (req,res,next) => {
     try {
         const err = validationResult(req);
         if(!err.isEmpty()){
-        return res.status(400).json({errors:err.array()});
+            const errormsg=new Error("Validation error");
+            errormsg.status=400;
+            errormsg.details=err.array();
+            next(errormsg);
         }
         const {name,email,password} = req.body;
         const existingUser = await user.findOne({email});
         if(existingUser){
-            return res.status(400).json({message:"User already exists"});
+            const errormsg = new Error("Email already in use");
+            errormsg.status=400;
+            return next(errormsg);
         }
         const hashedPassword= await bcrypt.hash(password,10);
         const newUser= new user({
@@ -24,25 +29,31 @@ const register = async (req,res) => {
         await newUser.save();
         res.status(201).json({message:"User registered successfully"});
     } catch (error) {
-        console.error(error);
-        res.status(500).json({message:error.message});
+        next(error);
     }
 }
 
-const login = async (req,res)=>{
+const login = async (req,res,next)=>{
     try {
         const err = validationResult(req);
         if(!err.isEmpty()){
-        return res.status(400).json({errors:err.array()});
+            const errormsg=new Error("Validation error");
+            errormsg.status=400;
+            errormsg.details=err.array();
+            return next(errormsg);
         }
         const {email,password} = req.body;
         const existingUser = await user.findOne({email});
         if(!existingUser){
-            return res.status(400).json({message:"Invalid credentials"});
-        }   
+            const errormsg = new Error("Invalid credentials");
+            errormsg.status = 400;
+            return next(errormsg);
+        }
         const isPasswordValid = await bcrypt.compare(password,existingUser.password);
         if(!isPasswordValid){
-            return res.status(400).json({message:"Invalid credentials"});
+            const errormsg = new Error("Invalid credentials");
+            errormsg.status = 400;
+            return next(errormsg);
         }
         const token =jwt.sign({
             userID:existingUser._id
@@ -53,7 +64,7 @@ const login = async (req,res)=>{
             message:"Login successful",
         });
     } catch (error) {
-        res.status(500).json({message:"Server error"});
+        next(error);
     }
 }
 module.exports = {register,login};
