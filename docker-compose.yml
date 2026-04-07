@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   mongodb:
     image: mongo:6
@@ -29,13 +27,32 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
-        
 
 
 
+  api-service:
+    build: ./api-service
+    container_name: fittrack-api-service
+    restart: always
+    ports:
+      - "5000:5000"
+    depends_on:
+      - mongodb
+      - redis
+      - rabbitmq
+    env_file:
+      - ./api-service/.env
 
+
+  worker-service:
+    build: ./worker-service
+    container_name: fittrack-worker-service
+    restart: always
+    depends_on:
+      - rabbitmq
+    env_file:
+      - ./worker-service/.env
   
-
 volumes:
   mongo_data:
   redis_data:

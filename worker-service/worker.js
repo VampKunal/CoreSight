@@ -1,20 +1,32 @@
 const amqp = require("amqplib");
 
-const startWorker = async () => {
-    const connection = await amqp.connect("amqp://localhost");
-    const channel = await connection.createChannel();
+const connectRabbitMQ = async () => {
+    try {
+        const connection = await amqp.connect(
+            process.env.RABBITMQ_URL || "amqp://rabbitmq"
+        );
 
-    await channel.assertQueue("workout_queue");
+        const channel = await connection.createChannel();
 
-    console.log("Worker started, waiting for messages...");
+        const queue = "workoutQueue"; 
 
-    channel.consume("workout_queue", (msg) => {
-        const data = JSON.parse(msg.content.toString());
+        await channel.assertQueue(queue, { durable: true });
 
-        console.log("Processing workout:", data);
+        console.log("Worker connected to RabbitMQ");
+        console.log("Waiting for messages...");
 
-        channel.ack(msg);
-    });
+        channel.consume(queue, (msg) => {
+            const data = JSON.parse(msg.content.toString());
+
+            console.log("Processing workout:", data);
+
+            channel.ack(msg);
+        });
+
+    } catch (error) {
+        console.log("Retrying RabbitMQ connection...");
+        setTimeout(connectRabbitMQ, 5000);
+    }
 };
 
-startWorker();
+connectRabbitMQ();
