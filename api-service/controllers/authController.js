@@ -33,38 +33,72 @@ const register = async (req,res,next) => {
     }
 }
 
-const login = async (req,res,next)=>{
+const generateAccessToken = (userID) => {
+    return jwt.sign({ userID }, process.env.JWT_SECRET, { expiresIn: '15m' });
+};
+
+const generateRefreshToken = (userID) => {
+    return jwt.sign({ userID }, process.env.JWT_REFRESH_SECRET, { expiresIn: '7d' });
+};
+
+const login = async (req, res, next) => {
     try {
         const err = validationResult(req);
-        if(!err.isEmpty()){
-            const errormsg=new Error("Validation error");
-            errormsg.status=400;
-            errormsg.details=err.array();
+        if (!err.isEmpty()) {
+            const errormsg = new Error("Validation error");
+            errormsg.status = 400;
+            errormsg.details = err.array();
             return next(errormsg);
         }
-        const {email,password} = req.body;
-        const existingUser = await user.findOne({email});
-        if(!existingUser){
+        const { email, password } = req.body;
+        const existingUser = await user.findOne({ email });
+        if (!existingUser) {
             const errormsg = new Error("Invalid credentials");
             errormsg.status = 400;
             return next(errormsg);
         }
-        const isPasswordValid = await bcrypt.compare(password,existingUser.password);
-        if(!isPasswordValid){
+        const isPasswordValid = await bcrypt.compare(password, existingUser.password);
+        if (!isPasswordValid) {
             const errormsg = new Error("Invalid credentials");
             errormsg.status = 400;
             return next(errormsg);
         }
-        const token =jwt.sign({
-            userID:existingUser._id
-        },process.env.JWT_SECRET,{expiresIn:"1h"});
+
+        const accessToken = generateAccessToken(existingUser._id);
+        const refreshToken = generateRefreshToken(existingUser._id);
 
         res.status(200).json({
-            token,
-            message:"Login successful",
+            accessToken,
+            refreshToken,
+            message: "Login successful",
         });
     } catch (error) {
         next(error);
     }
 }
-module.exports = {register,login};
+
+const refreshToken = async (req, res, next) => {
+    const { token } = req.body;
+    if (!token) {
+        const err = new Error("Refresh token required");
+        err.status = 401;
+        return next(err);
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
+        const newAccessToken = generateAccessToken(decoded.userID);
+        const newRefreshToken = generateRefreshToken(decoded.userID);
+
+        res.status(200).json({
+            accessToken: newAccessToken,
+            refreshToken: newRefreshToken
+        });
+    } catch (error) {
+        const err = new Error("Invalid refresh token");
+        err.status = 403;
+        next(err);
+    }
+}
+
+module.exports = { register, login, refreshToken };
