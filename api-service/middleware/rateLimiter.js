@@ -1,13 +1,31 @@
 const rateLimit = require('express-rate-limit');
 
+// Auth routes: Protect against brute force
 const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes)
-    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-    message: {
-        message: 'Too many requests from this IP, please try again after 15 minutes'
-    }
+    windowMs: 15 * 60 * 1000,
+    max: 50, // 50 attempts per 15 mins
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: 'Too many login/register attempts. Please try again later.' }
 });
 
-module.exports = { authLimiter };
+// General API: Prevent excessive scraping or abuse
+const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 300, // 300 reqs per 15 mins (very generous)
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: 'General API limit reached. Slow down a bit!' }
+});
+
+// LLM endpoints: Protect costs (Gemini generation)
+const llmLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 30, // 30 generations per hour
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: 'AI generation limit reached for this hour. Grab a water and try again soon!' }
+});
+
+module.exports = { authLimiter, apiLimiter, llmLimiter };
+

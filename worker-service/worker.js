@@ -1,5 +1,10 @@
 const amqp = require("amqplib");
+const axios = require("axios");
 const logger = require('./utils/logger');
+
+const API_SERVICE_URL = process.env.API_SERVICE_URL || "http://api-service:5000";
+const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "";
+
 const connectRabbitMQ = async () => {
     try {
         const connection = await amqp.connect(
@@ -8,23 +13,40 @@ const connectRabbitMQ = async () => {
 
         const channel = await connection.createChannel();
 
-        const queue = "workoutQueue";
+        // ── Posture Queue (new) ──────────────────────────────────────────────
+        const postureQueue = "postureQueue";
+        await channel.assertQueue(postureQueue, { durable: true });
+        logger.info("Worker listening on postureQueue");
 
-        await channel.assertQueue(queue, { durable: true });
+        channel.consume(postureQueue, async (msg) => {
+            if (!msg) return;
+            try {
+                const data = JSON.parse(msg.content.toString());
+                logger.info("Received posture result", { sessionId: data.sessionId, score: data.score });
 
-        logger.info("Worker connected to RabbitMQ");
-        logger.info("Waiting for messages...");
+                await axios.post(
+                    `${API_SERVICE_URL}/api/posture/ingest`,
+                    data,
+                    {
+                        headers: {
+                            "Content-Type": "application/json",
+                            "x-internal-secret": INTERNAL_SECRET,
+                        },
+                        timeout: 10000,
+                    }
+                );
 
-        channel.consume(queue, (msg) => {
-            const data = JSON.parse(msg.content.toString());
-
-            logger.info("Processing workout:", { data });
-
-            channel.ack(msg);
+                logger.info("Posture session forwarded to api-service", { sessionId: data.sessionId });
+                channel.ack(msg);
+            } catch (err) {
+                logger.error("Error forwarding postureQueue message", { error: err.message });
+                // Nack with requeue=true so it retries once
+                channel.nack(msg, false, true);
+            }
         });
 
     } catch (error) {
-        logger.error("Retrying RabbitMQ connection...", error);
+        logger.error("RabbitMQ connection failed, retrying in 5s...", { error: error.message });
         setTimeout(connectRabbitMQ, 5000);
     }
 };

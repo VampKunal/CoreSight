@@ -4,34 +4,38 @@ const express = require('express');
 const cors = require("cors");
 const logger = require('./utils/logger');
 const connectDB = require("./config/db");
-const { connnectRabbitMQ } = require('./services/queueProducer');
-
+const helmet = require('helmet');
+const { apiLimiter } = require('./middleware/rateLimiter');
 const authRoutes = require("./routes/authRoutes");
-const testRoutes = require('./routes/testRoutes');
-const workoutRoutes = require('./routes/workoutRoutes');
-const exerciseRoutes = require('./routes/exerciseRoutes');
+const postureRoutes = require('./routes/postureRoutes');
+const dietRoutes = require('./routes/dietRoutes');
+const profileRoutes = require('./routes/profileRoutes');
 
 const errorhandler = require('./middleware/errorMiddleware');
 
 const app = express();
 
 connectDB();
-connnectRabbitMQ();
 
-
+// ---- Global Middleware ----
+app.use(helmet()); // Security headers
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use('/api/', apiLimiter); // Apply general rate limit to all /api routes
 
 
-logger.info("Registering /api/auth routes");
+logger.info("Registering routes");
 app.use("/api/auth", authRoutes);
-app.use("/api/exercises", exerciseRoutes);
-app.use("/api/test", testRoutes);
-app.use("/api/workouts", workoutRoutes);
+app.use("/api/posture", postureRoutes);
+app.use("/api/diet", dietRoutes);
+app.use("/api/profile", profileRoutes);
 
 app.get('/', (req, res) => {
-    res.json({ message: 'Welcome to the FitTrack API!' });
+    res.json({ 
+        message: 'Welcome to the FitTrack API - Industry Edition!',
+        status: 'Operational'
+    });
 });
 
 
