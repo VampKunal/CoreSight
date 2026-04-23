@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApiBaseUrl } from '../services/apiConfig';
+import { saveTokens } from '../services/authService';
 
 const AuthScreen = ({ navigation, onLoginSuccess }) => {
   const [isLogin, setIsLogin] = useState(true);
@@ -34,8 +34,7 @@ const AuthScreen = ({ navigation, onLoginSuccess }) => {
       }
 
       if (isLogin) {
-        await AsyncStorage.setItem('accessToken', data.accessToken);
-        await AsyncStorage.setItem('refreshToken', data.refreshToken);
+        await saveTokens(data);
         onLoginSuccess();
       } else {
         Alert.alert('Success', 'Registration successful! Please login.');
@@ -116,7 +115,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: '800',
-    color: '#ff6b00',
+    color: '#E85D2A',
     textAlign: 'center',
     marginBottom: 8,
   },
@@ -137,7 +136,7 @@ const styles = StyleSheet.create({
     borderColor: '#333',
   },
   button: {
-    backgroundColor: '#ff6b00',
+    backgroundColor: '#E85D2A',
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
@@ -153,7 +152,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   switchText: {
-    color: '#ff6b00',
+    color: '#E85D2A',
     fontSize: 14,
   },
 });

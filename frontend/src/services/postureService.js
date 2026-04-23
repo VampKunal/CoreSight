@@ -28,10 +28,12 @@ class PostureService {
 
   async analyzeVideo({ uri, userId = 'guest', exercise = 'general' }) {
     const formData = new FormData();
+    const extension = uri?.split('.').pop()?.toLowerCase();
+    const isMov = extension === 'mov' || extension === 'm4v';
     formData.append('file', {
       uri,
-      name: 'posture-video.mp4',
-      type: 'video/mp4',
+      name: `posture-video.${extension || 'mp4'}`,
+      type: isMov ? 'video/quicktime' : 'video/mp4',
     });
 
     const response = await fetch(
@@ -39,9 +41,6 @@ class PostureService {
       {
         method: 'POST',
         body: formData,
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
       }
     );
 

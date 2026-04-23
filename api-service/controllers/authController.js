@@ -11,7 +11,7 @@ const register = async (req,res,next) => {
             const errormsg=new Error("Validation error");
             errormsg.status=400;
             errormsg.details=err.array();
-            next(errormsg);
+            return next(errormsg);
         }
         const {name,email,password} = req.body;
         const existingUser = await user.findOne({email});
@@ -34,11 +34,19 @@ const register = async (req,res,next) => {
 }
 
 const generateAccessToken = (userID) => {
-    return jwt.sign({ userID }, process.env.JWT_SECRET, { expiresIn: '15m' });
+    return jwt.sign(
+        { userID: userID.toString() },
+        process.env.JWT_SECRET,
+        { expiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '2h' }
+    );
 };
 
 const generateRefreshToken = (userID) => {
-    return jwt.sign({ userID }, process.env.JWT_REFRESH_SECRET, { expiresIn: '7d' });
+    return jwt.sign(
+        { userID: userID.toString(), type: 'refresh' },
+        process.env.JWT_REFRESH_SECRET,
+        { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d' }
+    );
 };
 
 const login = async (req, res, next) => {
@@ -70,6 +78,11 @@ const login = async (req, res, next) => {
         res.status(200).json({
             accessToken,
             refreshToken,
+            user: {
+                id: existingUser._id,
+                name: existingUser.name,
+                email: existingUser.email,
+            },
             message: "Login successful",
         });
     } catch (error) {
@@ -87,6 +100,19 @@ const refreshToken = async (req, res, next) => {
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
+        if (decoded.type !== 'refresh') {
+            const err = new Error("Invalid refresh token");
+            err.status = 403;
+            return next(err);
+        }
+
+        const existingUser = await user.findById(decoded.userID).select('_id');
+        if (!existingUser) {
+            const err = new Error("User not found");
+            err.status = 403;
+            return next(err);
+        }
+
         const newAccessToken = generateAccessToken(decoded.userID);
         const newRefreshToken = generateRefreshToken(decoded.userID);
 

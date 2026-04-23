@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { View, ActivityIndicator } from 'react-native';
 
 import AuthScreen from './src/screens/AuthScreen';
 import MainTabs from './src/screens/MainTabs';
+import { clearTokens, getStoredTokens, refreshAccessToken } from './src/services/authService';
 
 const Stack = createNativeStackNavigator();
 
@@ -19,10 +19,24 @@ const App = () => {
 
   const checkToken = async () => {
     try {
-      const token = await AsyncStorage.getItem('accessToken');
-      setAuthToken(token);
+      const { accessToken, refreshToken } = await getStoredTokens();
+
+      if (accessToken) {
+        setAuthToken(accessToken);
+        return;
+      }
+
+      if (refreshToken) {
+        const nextToken = await refreshAccessToken();
+        setAuthToken(nextToken);
+        return;
+      }
+
+      setAuthToken(null);
     } catch (e) {
       console.error(e);
+      await clearTokens();
+      setAuthToken(null);
     } finally {
       setIsLoading(false);
     }

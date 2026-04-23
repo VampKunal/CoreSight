@@ -1,8 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Animated,
-  Easing,
+  Alert,
   Modal,
   ScrollView,
   StyleSheet,
@@ -13,318 +12,226 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
-import * as Speech from 'expo-speech';
 import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 
 import PostureService from '../services/postureService';
 import WebSocketService from '../services/websocketService';
-import { COLORS, SHADOWS, SIZES, SPACING } from '../theme';
+import { COLORS } from '../theme';
 
-const CONNECTIONS = [
-  [11, 12],
-  [11, 13],
-  [13, 15],
-  [12, 14],
-  [14, 16],
-  [11, 23],
-  [12, 24],
-  [23, 24],
-  [23, 25],
-  [25, 27],
-  [24, 26],
-  [26, 28],
-];
+const angleLabel = {
+  neck_tilt: 'Neck',
+  spine: 'Spine',
+  left_knee: 'Left knee',
+  right_knee: 'Right knee',
+  shoulder_diff: 'Shoulders',
+};
 
-const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+const getReportTitle = (score = 0) => {
+  if (score >= 85) {
+    return 'Good form';
+  }
 
-const getPrimaryIssue = (analysis) => analysis?.issues?.[0] || '';
+  if (score >= 65) {
+    return 'Needs a small correction';
+  }
 
-const getCorrectionMeta = (issue = '') => {
+  return 'Correct before continuing';
+};
+
+const getCorrection = (issue = '') => {
   const lower = issue.toLowerCase();
 
   if (lower.includes('head') || lower.includes('chin') || lower.includes('neck')) {
-    return {
-      icon: 'head-sync-outline',
-      title: 'Set your head line',
-      cue: 'Pull the chin slightly back and stack your ears over your shoulders.',
-      focus: 'Neck',
-    };
+    return 'Bring your chin slightly back and stack your ears over your shoulders.';
   }
 
   if (lower.includes('spine') || lower.includes('back')) {
-    return {
-      icon: 'human-handsdown',
-      title: 'Brace the torso',
-      cue: 'Lift the chest gently, tighten your core, and keep the spine long.',
-      focus: 'Spine',
-    };
+    return 'Brace your core, lift your chest gently, and keep the spine long.';
   }
 
   if (lower.includes('knee') || lower.includes('leg')) {
-    return {
-      icon: 'human',
-      title: 'Track the knees',
-      cue: 'Keep both knees pointing over the toes and move with control.',
-      focus: 'Knees',
-    };
+    return 'Keep both knees tracking over your toes and slow the movement down.';
   }
 
   if (lower.includes('shoulder')) {
-    return {
-      icon: 'arm-flex-outline',
-      title: 'Level the shoulders',
-      cue: 'Relax the traps, pull shoulder blades back, and keep both sides even.',
-      focus: 'Shoulders',
-    };
+    return 'Relax your traps and level both shoulders before the next rep.';
   }
 
-  return {
-    icon: 'target',
-    title: 'Hold the correction',
-    cue: issue || 'Stay tall, breathe steadily, and move through the rep slowly.',
-    focus: 'Full body',
-  };
+  return issue || 'Move slowly, stay centered in frame, and keep breathing steadily.';
 };
 
-const Line = ({ start, end, width, height, color }) => {
-  const x1 = start.x * width;
-  const y1 = start.y * height;
-  const x2 = end.x * width;
-  const y2 = end.y * height;
-  const length = Math.hypot(x2 - x1, y2 - y1);
-  const angle = `${Math.atan2(y2 - y1, x2 - x1)}rad`;
+const ReportModal = ({ visible, analysis, source, onClose }) => {
+  const angles = Object.entries(analysis?.angles || {});
+  const issues = analysis?.issues?.length ? analysis.issues : ['No visible posture issue found.'];
+  const score = analysis?.score ?? 0;
+  const isGood = score >= 85 && !analysis?.issues?.length;
 
   return (
-    <View
-      pointerEvents="none"
-      style={[
-        styles.skeletonLine,
-        {
-          width: length,
-          backgroundColor: color,
-          transform: [{ translateX: x1 }, { translateY: y1 }, { rotate: angle }],
-        },
-      ]}
-    />
+    <Modal visible={visible} animationType="slide" transparent>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.reportSheet}>
+          <View style={styles.reportHeader}>
+            <View>
+              <Text style={styles.kicker}>{source || 'Camera analysis'}</Text>
+              <Text style={styles.reportTitle}>{getReportTitle(score)}</Text>
+            </View>
+            <TouchableOpacity style={styles.iconButtonDark} onPress={onClose} activeOpacity={0.84}>
+              <Icon name="close" size={23} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.scoreRow}>
+            <View style={[styles.scoreCircle, { borderColor: isGood ? COLORS.success : COLORS.primary }]}>
+              <Text style={[styles.scoreNumber, { color: isGood ? COLORS.success : COLORS.primary }]}>{score}</Text>
+              <Text style={styles.scoreCaption}>score</Text>
+            </View>
+            <View style={styles.scoreCopy}>
+              <Text style={styles.scoreTitle}>{isGood ? 'Keep this position' : 'Main correction'}</Text>
+              <Text style={styles.scoreText}>{getCorrection(issues[0])}</Text>
+            </View>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <Text style={styles.sectionTitle}>Corrections</Text>
+            {issues.map((issue, index) => (
+              <View key={`${issue}-${index}`} style={styles.reportItem}>
+                <Icon name={isGood ? 'check-circle-outline' : 'alert-circle-outline'} size={21} color={isGood ? COLORS.success : COLORS.warning} />
+                <View style={styles.reportItemCopy}>
+                  <Text style={styles.reportIssue}>{issue}</Text>
+                  {!isGood ? <Text style={styles.reportFix}>{getCorrection(issue)}</Text> : null}
+                </View>
+              </View>
+            ))}
+
+            {angles.length ? (
+              <>
+                <Text style={styles.sectionTitle}>Measured angles</Text>
+                <View style={styles.angleGrid}>
+                  {angles.map(([key, value]) => (
+                    <View key={key} style={styles.angleBox}>
+                      <Text style={styles.angleValue}>{value}</Text>
+                      <Text style={styles.angleLabel}>{angleLabel[key] || key}</Text>
+                    </View>
+                  ))}
+                </View>
+              </>
+            ) : null}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
   );
 };
 
-const LandmarkOverlay = ({ landmarks, layout, score }) => {
-  const visibleLandmarks = useMemo(
-    () => (landmarks || []).filter((point) => point.visibility === undefined || point.visibility > 0.35),
-    [landmarks]
-  );
-
-  if (!layout.width || !layout.height || visibleLandmarks.length === 0) {
-    return null;
-  }
-
-  const color = score >= 85 ? 'rgba(75, 181, 111, 0.86)' : score >= 65 ? 'rgba(245, 166, 35, 0.9)' : 'rgba(232, 87, 76, 0.92)';
-  const byIndex = new Map(visibleLandmarks.map((point) => [point.index, point]));
-
-  return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      {CONNECTIONS.map(([from, to]) => {
-        const start = byIndex.get(from);
-        const end = byIndex.get(to);
-
-        if (!start || !end) {
-          return null;
-        }
-
-        return <Line key={`${from}-${to}`} start={start} end={end} width={layout.width} height={layout.height} color={color} />;
-      })}
-
-      {visibleLandmarks.map((point) => (
-        <View
-          key={point.index}
-          style={[
-            styles.landmarkDot,
-            {
-              left: point.x * layout.width - 3,
-              top: point.y * layout.height - 3,
-              borderColor: color,
-            },
-          ]}
-        />
-      ))}
-    </View>
-  );
-};
-
-const RealTimeCamera = ({ route }) => {
+const RealTimeCamera = ({ navigation, route }) => {
   const { userId = 'guest', exercise = 'squat' } = route.params || {};
   const cameraRef = useRef(null);
   const captureIntervalRef = useRef(null);
-  const lastSpokenRef = useRef(0);
   const [permission, requestPermission] = useCameraPermissions();
-  const [analysis, setAnalysis] = useState({ score: 100, issues: [], angles: {}, landmarks: [] });
-  const [isActive, setIsActive] = useState(true);
-  const [connectionState, setConnectionState] = useState('connecting');
-  const [statusMessage, setStatusMessage] = useState('Preparing camera and posture service...');
-  const [isUploading, setIsUploading] = useState(false);
-  const [mediaSummary, setMediaSummary] = useState(null);
-  const [dietVisible, setDietVisible] = useState(false);
-  const [workoutVisible, setWorkoutVisible] = useState(false);
-  const [cameraLayout, setCameraLayout] = useState({ width: 0, height: 0 });
-  const pulseAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(0)).current;
+  const [cameraReady, setCameraReady] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysis, setAnalysis] = useState(null);
+  const [reportVisible, setReportVisible] = useState(false);
+  const [source, setSource] = useState('Camera analysis');
+  const [liveEnabled, setLiveEnabled] = useState(true);
+  const [liveState, setLiveState] = useState('starting');
+  const [liveMessage, setLiveMessage] = useState('Live posture feedback will start when the camera is ready.');
 
-  const primaryIssue = getPrimaryIssue(analysis);
-  const correction = getCorrectionMeta(primaryIssue);
-  const score = clamp(Number(analysis.score) || 0, 0, 100);
-  const scoreColor = score >= 85 ? COLORS.success : score >= 65 ? COLORS.warning : COLORS.error;
-  const hasIssues = analysis.issues?.length > 0;
+  const status = useMemo(() => {
+    if (!permission) {
+      return 'Checking camera permission';
+    }
 
-  useEffect(() => {
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 900,
-          easing: Easing.out(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 0,
-          duration: 900,
-          easing: Easing.in(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ])
-    );
+    if (!permission.granted) {
+      return 'Camera permission is needed for posture analysis';
+    }
 
-    pulse.start();
-    return () => pulse.stop();
-  }, [pulseAnim]);
+    if (!cameraReady) {
+      return 'Preparing camera';
+    }
 
-  useEffect(() => {
-    Animated.spring(slideAnim, {
-      toValue: hasIssues ? 1 : 0,
-      friction: 7,
-      tension: 70,
-      useNativeDriver: true,
-    }).start();
-  }, [hasIssues, slideAnim]);
+    if (liveEnabled) {
+      return 'Live correction is running. Use Analyze now for a full report.';
+    }
 
-  const applyAnalysis = (data, sourceLabel = 'Live posture analysis') => {
+    return 'Live correction is paused. You can still analyze now.';
+  }, [cameraReady, liveEnabled, permission]);
+
+  const openReport = (data, nextSource) => {
     setAnalysis({
       score: data.score ?? 0,
       issues: data.issues ?? [],
       angles: data.angles ?? {},
-      landmarks: data.landmarks ?? [],
-      frames: data.frames ?? [],
     });
-
-    if (data.error) {
-      setStatusMessage(data.error);
-      return;
-    }
-
-    setStatusMessage(sourceLabel);
-
-    if (data.issues?.length > 0) {
-      const now = Date.now();
-      if (now - lastSpokenRef.current > 6500) {
-        Speech.speak(getCorrectionMeta(data.issues[0]).cue, { rate: 0.88, pitch: 1.05 });
-        lastSpokenRef.current = now;
-      }
-    }
+    setSource(nextSource);
+    setReportVisible(true);
   };
 
-  const handleUpload = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.All,
-      base64: true,
-      quality: 0.65,
-    });
+  const applyLiveAnalysis = (data) => {
+    const nextAnalysis = {
+      score: data.score ?? 0,
+      issues: data.issues ?? [],
+      angles: data.angles ?? {},
+    };
 
-    if (result.canceled || !result.assets?.length) {
-      return;
-    }
+    setAnalysis(nextAnalysis);
 
-    const asset = result.assets[0];
-    setIsUploading(true);
-    setIsActive(false);
-    setMediaSummary(null);
-    setStatusMessage('Analyzing uploaded media...');
-
-    try {
-      const isVideo = asset.type === 'video' || asset.uri?.toLowerCase().match(/\.(mp4|mov|m4v)$/);
-      const data = isVideo
-        ? await PostureService.analyzeVideo({ uri: asset.uri, userId, exercise })
-        : await PostureService.analyzeImage({ base64: asset.base64, userId, exercise });
-
-      applyAnalysis(data, isVideo ? 'Uploaded video analysis complete.' : 'Uploaded image analysis complete.');
-      setMediaSummary({
-        type: isVideo ? 'Video' : 'Image',
-        frames: data.frames?.length || (isVideo ? 0 : 1),
-        sessionId: data.sessionId,
-      });
-    } catch (error) {
-      setStatusMessage(error.message || 'Media analysis failed.');
-    } finally {
-      setIsUploading(false);
+    if (data.error) {
+      setLiveMessage(data.error);
+    } else if (nextAnalysis.issues.length) {
+      setLiveMessage(getCorrection(nextAnalysis.issues[0]));
+    } else {
+      setLiveMessage('Form looks steady. Keep the full body inside the frame.');
     }
   };
 
   useEffect(() => {
-    let isMounted = true;
+    let mounted = true;
 
-    const setup = async () => {
-      const permissionResponse = permission?.granted ? permission : await requestPermission();
-
-      if (!permissionResponse?.granted) {
-        if (isMounted) {
-          setStatusMessage('Camera permission is required to analyze posture.');
-          setConnectionState('permission-denied');
-        }
+    const setupLive = async () => {
+      if (!permission?.granted) {
         return;
       }
 
       try {
         await PostureService.getHealth();
-        if (isMounted) {
-          setStatusMessage('Posture service connected. Starting live feedback...');
-        }
       } catch (error) {
-        if (isMounted) {
-          setStatusMessage('Posture service is unreachable. Start the Python service and keep this device on the same network.');
-          setConnectionState('backend-unreachable');
+        if (mounted) {
+          setLiveState('offline');
+          setLiveMessage('Posture service is offline. Start the Python service, then reopen this screen.');
         }
+        return;
       }
 
       WebSocketService.connect(
         userId,
         exercise,
         (data) => {
-          if (isMounted) {
-            applyAnalysis(data, 'Receiving live posture analysis.');
+          if (mounted) {
+            applyLiveAnalysis(data);
           }
         },
         (nextState) => {
-          if (!isMounted) {
+          if (!mounted) {
             return;
           }
 
-          setConnectionState(nextState);
-
-          if (nextState === 'connecting') {
-            setStatusMessage('Connecting to posture analysis...');
-          } else if (nextState === 'connected') {
-            setStatusMessage('Live posture connection established.');
+          setLiveState(nextState);
+          if (nextState === 'connected') {
+            setLiveMessage('Live posture correction is connected.');
+          } else if (nextState === 'connecting') {
+            setLiveMessage('Connecting to live posture correction...');
           } else if (nextState === 'error' || nextState === 'disconnected') {
-            setStatusMessage('Connection dropped. Verify that the posture service is reachable.');
+            setLiveMessage('Live correction disconnected. Check the posture service.');
           }
         }
       );
     };
 
-    setup();
+    setupLive();
 
     return () => {
-      isMounted = false;
-      clearInterval(captureIntervalRef.current);
+      mounted = false;
       WebSocketService.disconnect();
     };
   }, [exercise, permission?.granted, userId]);
@@ -332,19 +239,13 @@ const RealTimeCamera = ({ route }) => {
   useEffect(() => {
     clearInterval(captureIntervalRef.current);
 
-    if (!isActive) {
+    if (!permission?.granted || !cameraReady || !liveEnabled || !WebSocketService.isConnected()) {
       return undefined;
     }
 
     captureIntervalRef.current = setInterval(async () => {
-      const camera = cameraRef.current;
-
-      if (!camera || !WebSocketService.isConnected()) {
-        return;
-      }
-
       try {
-        const photo = await camera.takePictureAsync({
+        const photo = await cameraRef.current?.takePictureAsync({
           base64: true,
           quality: 0.35,
           skipProcessing: true,
@@ -354,185 +255,153 @@ const RealTimeCamera = ({ route }) => {
           WebSocketService.sendFrame(photo.base64);
         }
       } catch (error) {
-        setStatusMessage('Frame capture paused. Hold the device steady and try again.');
+        setLiveMessage('Live frame capture paused. Hold steady and keep the camera open.');
       }
-    }, 950);
+    }, 1500);
 
     return () => {
       clearInterval(captureIntervalRef.current);
     };
-  }, [isActive]);
+  }, [cameraReady, liveEnabled, liveState, permission?.granted]);
+
+  const analyzeCamera = async () => {
+    if (!permission?.granted) {
+      await requestPermission();
+      return;
+    }
+
+    if (!cameraRef.current || !cameraReady) {
+      Alert.alert('Camera not ready', 'Wait a moment for the camera preview to load.');
+      return;
+    }
+
+    try {
+      setAnalyzing(true);
+      const photo = await cameraRef.current.takePictureAsync({
+        base64: true,
+        quality: 0.65,
+        skipProcessing: true,
+      });
+
+      if (!photo?.base64) {
+        throw new Error('Could not capture a camera frame.');
+      }
+
+      const data = await PostureService.analyzeImage({ base64: photo.base64, userId, exercise });
+      openReport(data, 'Camera analysis');
+    } catch (error) {
+      Alert.alert('Analysis failed', error.message || 'Could not analyze the camera frame.');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const uploadMedia = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      base64: true,
+      quality: 0.7,
+    });
+
+    if (result.canceled || !result.assets?.length) {
+      return;
+    }
+
+    const asset = result.assets[0];
+    const isVideo = asset.type === 'video' || asset.uri?.toLowerCase().match(/\.(mp4|mov|m4v)$/);
+
+    try {
+      setAnalyzing(true);
+      if (!isVideo && !asset.base64) {
+        throw new Error('Could not read the selected image. Try another image or take a new photo.');
+      }
+
+      const data = isVideo
+        ? await PostureService.analyzeVideo({ uri: asset.uri, userId, exercise })
+        : await PostureService.analyzeImage({ base64: asset.base64, userId, exercise });
+      openReport(data, isVideo ? 'Video upload' : 'Image upload');
+    } catch (error) {
+      Alert.alert('Upload analysis failed', error.message || 'Could not analyze this file.');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
 
   if (!permission) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.statusText}>Loading camera permissions...</Text>
-      </View>
+      <SafeAreaView style={styles.emptyContainer}>
+        <ActivityIndicator color={COLORS.primary} size="large" />
+        <Text style={styles.emptyText}>Checking camera permission...</Text>
+      </SafeAreaView>
     );
   }
 
-  const pulseScale = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.16] });
-  const pulseOpacity = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.08] });
-  const coachTranslate = slideAnim.interpolate({ inputRange: [0, 1], outputRange: [16, 0] });
-
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.cameraLayer} onLayout={(event) => setCameraLayout(event.nativeEvent.layout)}>
-        <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" active={isActive} mute />
-        <LandmarkOverlay landmarks={analysis.landmarks} layout={cameraLayout} score={score} />
-        <View style={styles.vignette} pointerEvents="none" />
+      <View style={styles.topBar}>
+        <TouchableOpacity style={styles.menuButton} onPress={() => navigation.navigate('Menu')} activeOpacity={0.84}>
+          <Icon name="menu" size={25} color="#FFFFFF" />
+        </TouchableOpacity>
+        <View style={styles.topCopy}>
+          <Text style={styles.kicker}>Posture camera</Text>
+          <Text style={styles.title}>Analyze form</Text>
+        </View>
       </View>
 
-      <View style={styles.overlay}>
-        <View style={styles.header}>
-          <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.iconButton} onPress={() => setIsActive((value) => !value)} activeOpacity={0.82}>
-              <Icon name={isActive ? 'pause' : 'play'} size={24} color={COLORS.white} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.iconButton} onPress={handleUpload} activeOpacity={0.82} disabled={isUploading}>
-              {isUploading ? <ActivityIndicator color={COLORS.white} size="small" /> : <Icon name="tray-arrow-up" size={24} color={COLORS.white} />}
-            </TouchableOpacity>
-          </View>
-
-          <View style={[styles.scoreBadge, { borderColor: scoreColor }]}>
-            <Text style={[styles.scoreText, { color: scoreColor }]}>{score}</Text>
-            <Text style={styles.scoreLabel}>score</Text>
-          </View>
-        </View>
-
-        <View style={styles.connectionBanner}>
-          <View style={[styles.statusDot, { backgroundColor: connectionState === 'connected' ? COLORS.success : COLORS.warning }]} />
-          <View style={styles.connectionCopy}>
-            <Text style={styles.connectionTitle}>{connectionState.replace('-', ' ')}</Text>
-            <Text style={styles.connectionText}>{statusMessage}</Text>
-          </View>
-        </View>
-
-        <View style={styles.middleSpace}>
-          {hasIssues ? (
-            <Animated.View
-              style={[
-                styles.coachCard,
-                {
-                  opacity: slideAnim,
-                  transform: [{ translateY: coachTranslate }],
-                },
-              ]}
-            >
-              <View style={styles.correctionVisual}>
-                <Animated.View style={[styles.pulseRing, { opacity: pulseOpacity, transform: [{ scale: pulseScale }] }]} />
-                <View style={styles.correctionIcon}>
-                  <Icon name={correction.icon} size={30} color={COLORS.white} />
+      <View style={styles.cameraFrame}>
+        {permission.granted ? (
+          <>
+            <CameraView
+              ref={cameraRef}
+              style={StyleSheet.absoluteFill}
+              facing="back"
+              active
+              mute
+              onCameraReady={() => setCameraReady(true)}
+            />
+            <View style={styles.livePanel}>
+              <View style={styles.liveHeader}>
+                <View style={[styles.liveDot, { backgroundColor: liveState === 'connected' ? COLORS.success : COLORS.warning }]} />
+                <Text style={styles.liveLabel}>{liveEnabled ? 'Live correction' : 'Live paused'}</Text>
+                <TouchableOpacity onPress={() => setLiveEnabled((value) => !value)} style={styles.liveToggle} activeOpacity={0.85}>
+                  <Text style={styles.liveToggleText}>{liveEnabled ? 'Pause' : 'Resume'}</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.liveMessage} numberOfLines={2}>{liveMessage}</Text>
+              {analysis ? (
+                <View style={styles.liveScoreRow}>
+                  <Text style={styles.liveScore}>{analysis.score ?? 0}</Text>
+                  <Text style={styles.liveIssue} numberOfLines={1}>
+                    {analysis.issues?.[0] || 'No issue detected'}
+                  </Text>
                 </View>
-              </View>
-              <View style={styles.coachCopy}>
-                <Text style={styles.coachEyebrow}>{correction.focus} correction</Text>
-                <Text style={styles.coachTitle}>{correction.title}</Text>
-                <Text style={styles.coachText}>{correction.cue}</Text>
-              </View>
-            </Animated.View>
-          ) : (
-            <View style={styles.goodCard}>
-              <Icon name="check-decagram-outline" size={26} color={COLORS.success} />
-              <View style={styles.coachCopy}>
-                <Text style={styles.coachTitle}>Form is holding</Text>
-                <Text style={styles.coachText}>Keep the movement slow and stay inside the frame.</Text>
-              </View>
+              ) : null}
             </View>
-          )}
-        </View>
-
-        <View style={styles.bottomPanel}>
-          <View style={styles.metricsContainer}>
-            <View style={styles.metric}>
-              <Text style={styles.metricValue}>{analysis.angles?.neck_tilt || 0} deg</Text>
-              <Text style={styles.metricLabel}>Neck</Text>
-            </View>
-            <View style={styles.metric}>
-              <Text style={styles.metricValue}>{analysis.angles?.spine || 0} deg</Text>
-              <Text style={styles.metricLabel}>Spine</Text>
-            </View>
-            <View style={styles.metric}>
-              <Text style={styles.metricValue}>{analysis.angles?.left_knee || 0} deg</Text>
-              <Text style={styles.metricLabel}>Knee</Text>
-            </View>
-          </View>
-
-          {mediaSummary ? (
-            <View style={styles.mediaSummary}>
-              <Icon name="file-check-outline" size={18} color={COLORS.primary} />
-              <Text style={styles.mediaSummaryText}>
-                {mediaSummary.type} checked{mediaSummary.frames ? ` across ${mediaSummary.frames} sample${mediaSummary.frames === 1 ? '' : 's'}` : ''}
-              </Text>
-            </View>
-          ) : null}
-
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.issueRail}>
-            {(analysis.issues?.length ? analysis.issues : ['No correction needed right now']).map((issue, index) => (
-              <View key={`${issue}-${index}`} style={[styles.issueChip, !hasIssues && styles.issueChipGood]}>
-                <Icon name={hasIssues ? 'alert-circle-outline' : 'check-circle-outline'} size={16} color={hasIssues ? COLORS.warning : COLORS.success} />
-                <Text style={styles.issueChipText}>{issue}</Text>
-              </View>
-            ))}
-          </ScrollView>
-
-          <View style={styles.actionButtonsRow}>
-            <TouchableOpacity style={styles.actionButton} onPress={() => setWorkoutVisible(true)} activeOpacity={0.85}>
-              <Icon name="dumbbell" size={22} color={COLORS.white} />
-              <Text style={styles.actionButtonText}>Workout</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButtonSecondary} onPress={() => setDietVisible(true)} activeOpacity={0.85}>
-              <Icon name="food-apple-outline" size={22} color={COLORS.white} />
-              <Text style={styles.actionButtonText}>Diet</Text>
+          </>
+        ) : (
+          <View style={styles.permissionPanel}>
+            <Icon name="camera-off-outline" size={42} color={COLORS.primary} />
+            <Text style={styles.permissionTitle}>Camera is not available yet</Text>
+            <Text style={styles.permissionText}>Allow camera access so FitTrack can analyze your posture.</Text>
+            <TouchableOpacity style={styles.primaryButton} onPress={requestPermission} activeOpacity={0.86}>
+              <Text style={styles.primaryButtonText}>Allow camera</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        )}
       </View>
 
-      <Modal visible={dietVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Diet plan</Text>
-              <TouchableOpacity onPress={() => setDietVisible(false)} style={styles.modalClose}>
-                <Icon name="close" size={24} color={COLORS.white} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView>
-              <Text style={styles.modalText}>Open the Diet tab to generate a Gemini 3 Flash meal plan from your profile.</Text>
-              <View style={styles.mealCard}>
-                <Text style={styles.mealTitle}>Posture-aware cue</Text>
-                <Text style={styles.mealDesc}>After intense correction sessions, prioritize protein, hydration, and steady carbohydrates around training.</Text>
-              </View>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      <View style={styles.controlPanel}>
+        <Text style={styles.statusText}>{status}</Text>
+        <TouchableOpacity style={styles.primaryButton} onPress={analyzeCamera} disabled={analyzing} activeOpacity={0.88}>
+          {analyzing ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryButtonText}>Analyze now</Text>}
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.secondaryButton} onPress={uploadMedia} disabled={analyzing} activeOpacity={0.88}>
+          <Icon name="tray-arrow-up" size={20} color="#FFFFFF" />
+          <Text style={styles.secondaryButtonText}>Upload image or video</Text>
+        </TouchableOpacity>
+      </View>
 
-      <Modal visible={workoutVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Correction drills</Text>
-              <TouchableOpacity onPress={() => setWorkoutVisible(false)} style={styles.modalClose}>
-                <Icon name="close" size={24} color={COLORS.white} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView>
-              {(analysis.issues?.length ? analysis.issues : ['Maintain your current form']).map((issue, index) => {
-                const meta = getCorrectionMeta(issue);
-                return (
-                  <View key={`${issue}-${index}`} style={styles.mealCard}>
-                    <Text style={styles.mealTitle}>{meta.title}</Text>
-                    <Text style={styles.mealDesc}>{meta.cue}</Text>
-                  </View>
-                );
-              })}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      <ReportModal visible={reportVisible} analysis={analysis} source={source} onClose={() => setReportVisible(false)} />
     </SafeAreaView>
   );
 };
@@ -540,334 +409,310 @@ const RealTimeCamera = ({ route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0b0d10',
+    backgroundColor: '#0B0D10',
   },
-  loadingContainer: {
+  emptyContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#0b0d10',
+    backgroundColor: '#0B0D10',
+    padding: 24,
   },
-  cameraLayer: {
-    ...StyleSheet.absoluteFillObject,
+  emptyText: {
+    color: '#FFFFFF',
+    marginTop: 14,
+    fontWeight: '700',
   },
-  vignette: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.18)',
-  },
-  overlay: {
-    flex: 1,
-    justifyContent: 'space-between',
-    padding: SPACING.m,
-  },
-  header: {
+  topBar: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 12,
   },
-  headerActions: {
-    flexDirection: 'row',
-    gap: SPACING.s,
-  },
-  iconButton: {
+  menuButton: {
     width: 46,
     height: 46,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(13, 18, 24, 0.72)',
+    backgroundColor: '#171C24',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.16)',
+    borderColor: 'rgba(255,255,255,0.1)',
+    marginRight: 14,
   },
-  scoreBadge: {
-    width: 70,
-    height: 70,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(13, 18, 24, 0.78)',
-    borderWidth: 1,
-    ...SHADOWS.medium,
+  topCopy: {
+    flex: 1,
   },
-  scoreText: {
-    fontSize: 25,
-    fontWeight: '800',
-    fontVariant: ['tabular-nums'],
-  },
-  scoreLabel: {
-    color: 'rgba(255, 255, 255, 0.68)',
-    fontSize: 11,
-    fontWeight: '700',
+  kicker: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.5,
     textTransform: 'uppercase',
   },
-  statusText: {
-    color: COLORS.white,
-    fontSize: SIZES.fontBody,
-    textAlign: 'center',
-    marginTop: SPACING.m,
+  title: {
+    color: '#FFFFFF',
+    fontSize: 25,
+    fontWeight: '900',
+    marginTop: 2,
   },
-  connectionBanner: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: 'rgba(13, 18, 24, 0.72)',
+  cameraFrame: {
+    flex: 1,
+    overflow: 'hidden',
+    marginHorizontal: 14,
+    borderRadius: 24,
+    backgroundColor: '#141922',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  livePanel: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    bottom: 12,
+    backgroundColor: 'rgba(11, 13, 16, 0.78)',
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.14)',
-    padding: SPACING.m,
-    marginTop: SPACING.s,
+    borderColor: 'rgba(255,255,255,0.14)',
+    padding: 12,
   },
-  statusDot: {
+  liveHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  liveDot: {
     width: 9,
     height: 9,
     borderRadius: 5,
-    marginTop: 5,
-    marginRight: SPACING.s,
+    marginRight: 8,
   },
-  connectionCopy: {
-    flex: 1,
-  },
-  connectionTitle: {
-    color: COLORS.white,
-    fontSize: SIZES.fontSmall,
-    fontWeight: '800',
-    textTransform: 'capitalize',
-  },
-  connectionText: {
-    color: 'rgba(255, 255, 255, 0.76)',
+  liveLabel: {
+    color: '#FFFFFF',
     fontSize: 13,
-    lineHeight: 19,
-    marginTop: 2,
-  },
-  middleSpace: {
+    fontWeight: '900',
     flex: 1,
-    justifyContent: 'center',
   },
-  coachCard: {
+  liveToggle: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  liveToggleText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  liveMessage: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  liveScoreRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(15, 20, 27, 0.84)',
-    borderRadius: 22,
-    padding: SPACING.m,
-    borderWidth: 1,
-    borderColor: 'rgba(245, 166, 35, 0.34)',
+    marginTop: 8,
   },
-  goodCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(17, 32, 24, 0.76)',
-    borderRadius: 22,
-    padding: SPACING.m,
-    borderWidth: 1,
-    borderColor: 'rgba(75, 181, 111, 0.32)',
+  liveScore: {
+    color: COLORS.primary,
+    fontSize: 22,
+    fontWeight: '900',
+    fontVariant: ['tabular-nums'],
+    marginRight: 10,
   },
-  correctionVisual: {
-    width: 64,
-    height: 64,
+  liveIssue: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  permissionPanel: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: SPACING.m,
+    padding: 24,
   },
-  pulseRing: {
-    position: 'absolute',
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: COLORS.warning,
+  permissionTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '900',
+    marginTop: 14,
   },
-  correctionIcon: {
-    width: 48,
-    height: 48,
+  permissionText: {
+    color: 'rgba(255,255,255,0.66)',
+    textAlign: 'center',
+    lineHeight: 21,
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  controlPanel: {
+    padding: 18,
+    gap: 12,
+  },
+  statusText: {
+    color: 'rgba(255,255,255,0.68)',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  primaryButton: {
+    minHeight: 54,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: COLORS.primary,
+    paddingHorizontal: 18,
   },
-  coachCopy: {
+  primaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  secondaryButton: {
+    minHeight: 50,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: '#171C24',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  secondaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  modalBackdrop: {
     flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.58)',
   },
-  coachEyebrow: {
-    color: COLORS.warning,
+  reportSheet: {
+    maxHeight: '82%',
+    backgroundColor: '#11161E',
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  reportHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+  },
+  reportTitle: {
+    color: '#FFFFFF',
+    fontSize: 25,
+    fontWeight: '900',
+    marginTop: 3,
+  },
+  iconButtonDark: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1C232E',
+  },
+  scoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#171C24',
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 18,
+  },
+  scoreCircle: {
+    width: 78,
+    height: 78,
+    borderRadius: 24,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  scoreNumber: {
+    fontSize: 28,
+    fontWeight: '900',
+    fontVariant: ['tabular-nums'],
+  },
+  scoreCaption: {
+    color: 'rgba(255,255,255,0.58)',
     fontSize: 12,
     fontWeight: '800',
     textTransform: 'uppercase',
-    marginBottom: 2,
   },
-  coachTitle: {
-    color: COLORS.white,
-    fontSize: 18,
+  scoreCopy: {
+    flex: 1,
+  },
+  scoreTitle: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  scoreText: {
+    color: 'rgba(255,255,255,0.68)',
+    lineHeight: 20,
+    marginTop: 5,
+  },
+  sectionTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '900',
+    marginBottom: 10,
+    marginTop: 2,
+  },
+  reportItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#171C24',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 10,
+  },
+  reportItemCopy: {
+    flex: 1,
+    marginLeft: 10,
+  },
+  reportIssue: {
+    color: '#FFFFFF',
     fontWeight: '800',
+    lineHeight: 20,
   },
-  coachText: {
-    color: 'rgba(255, 255, 255, 0.78)',
-    fontSize: 14,
+  reportFix: {
+    color: 'rgba(255,255,255,0.64)',
     lineHeight: 20,
     marginTop: 4,
   },
-  bottomPanel: {
-    backgroundColor: 'rgba(13, 18, 24, 0.78)',
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.14)',
-    padding: SPACING.m,
-  },
-  metricsContainer: {
+  angleGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 10,
+    paddingBottom: 18,
   },
-  metric: {
-    flex: 1,
-    paddingVertical: SPACING.s,
+  angleBox: {
+    minWidth: '30%',
+    flexGrow: 1,
+    backgroundColor: '#171C24',
+    borderRadius: 16,
+    padding: 14,
   },
-  metricValue: {
-    color: COLORS.white,
-    fontSize: 17,
-    fontWeight: '800',
+  angleValue: {
+    color: COLORS.primary,
+    fontSize: 19,
+    fontWeight: '900',
     fontVariant: ['tabular-nums'],
   },
-  metricLabel: {
-    color: 'rgba(255, 255, 255, 0.62)',
+  angleLabel: {
+    color: 'rgba(255,255,255,0.62)',
+    marginTop: 4,
     fontSize: 12,
-    marginTop: 3,
-  },
-  mediaSummary: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: SPACING.s,
-  },
-  mediaSummaryText: {
-    color: 'rgba(255, 255, 255, 0.76)',
-    marginLeft: SPACING.xs,
-    fontSize: 13,
-  },
-  issueRail: {
-    marginTop: SPACING.m,
-  },
-  issueChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    maxWidth: 280,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    borderRadius: 14,
-    backgroundColor: 'rgba(245, 166, 35, 0.13)',
-    borderWidth: 1,
-    borderColor: 'rgba(245, 166, 35, 0.28)',
-    marginRight: SPACING.s,
-  },
-  issueChipGood: {
-    backgroundColor: 'rgba(75, 181, 111, 0.14)',
-    borderColor: 'rgba(75, 181, 111, 0.3)',
-  },
-  issueChipText: {
-    color: COLORS.white,
-    fontSize: 13,
     fontWeight: '700',
-    marginLeft: 6,
-  },
-  actionButtonsRow: {
-    flexDirection: 'row',
-    gap: SPACING.s,
-    marginTop: SPACING.m,
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.primary,
-    padding: SPACING.m,
-    borderRadius: 16,
-  },
-  actionButtonSecondary: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.14)',
-    padding: SPACING.m,
-    borderRadius: 16,
-  },
-  actionButtonText: {
-    color: COLORS.white,
-    fontSize: SIZES.fontBody,
-    fontWeight: '800',
-    marginLeft: SPACING.xs,
-  },
-  skeletonLine: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    height: 3,
-    borderRadius: 2,
-    transformOrigin: '0px 1.5px',
-  },
-  landmarkDot: {
-    position: 'absolute',
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    borderWidth: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.72)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#141922',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: SPACING.l,
-    minHeight: '46%',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: SPACING.m,
-  },
-  modalTitle: {
-    fontSize: SIZES.fontTitle,
-    color: COLORS.white,
-    fontWeight: '800',
-  },
-  modalClose: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  modalText: {
-    color: 'rgba(255, 255, 255, 0.72)',
-    fontSize: SIZES.fontBody,
-    marginBottom: SPACING.m,
-    lineHeight: 22,
-  },
-  mealCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    padding: SPACING.m,
-    borderRadius: 16,
-    marginBottom: SPACING.s,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  mealTitle: {
-    color: COLORS.white,
-    fontSize: SIZES.fontBody,
-    fontWeight: '800',
-    marginBottom: 4,
-  },
-  mealDesc: {
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontSize: SIZES.fontSmall,
-    lineHeight: 20,
   },
 });
 

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getApiBaseUrl } from '../services/apiConfig';
+import { Ionicons } from '@expo/vector-icons';
+import { apiFetch } from '../services/apiClient';
+import { clearTokens } from '../services/authService';
 
-const ProfileScreen = ({ onLogout }) => {
+const ProfileScreen = ({ navigation, onLogout }) => {
   const [profile, setProfile] = useState({
     age: '',
     weight: '',
@@ -21,12 +22,8 @@ const ProfileScreen = ({ onLogout }) => {
   const fetchProfile = async () => {
     try {
       setLoading(true);
-      const token = await AsyncStorage.getItem('accessToken');
-      const response = await fetch(`${getApiBaseUrl()}/api/profile/me`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const data = await response.json();
-      if (response.ok && data) {
+      const data = await apiFetch('/api/profile/me');
+      if (data) {
         setProfile({
           age: data.age?.toString() || '',
           weight: data.weight?.toString() || '',
@@ -45,8 +42,6 @@ const ProfileScreen = ({ onLogout }) => {
   const saveProfile = async () => {
     try {
       setSaving(true);
-      const token = await AsyncStorage.getItem('accessToken');
-      
       const payload = {
         age: parseInt(profile.age) || 0,
         weight: parseInt(profile.weight) || 0,
@@ -58,21 +53,12 @@ const ProfileScreen = ({ onLogout }) => {
         gender: 'prefer-not-to-say'
       };
 
-      const response = await fetch(`${getApiBaseUrl()}/api/profile/update`, {
+      await apiFetch('/api/profile/update', {
         method: 'PATCH',
-        headers: { 
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      
-      if (response.ok) {
-        Alert.alert('Success', 'Profile saved successfully!');
-      } else {
-        const err = await response.json();
-        Alert.alert('Error', err.message || 'Failed to save profile');
-      }
+      Alert.alert('Saved', 'Profile saved successfully.');
     } catch (error) {
       Alert.alert('Error', error.message);
     } finally {
@@ -81,8 +67,7 @@ const ProfileScreen = ({ onLogout }) => {
   };
 
   const handleLogout = async () => {
-    await AsyncStorage.removeItem('accessToken');
-    await AsyncStorage.removeItem('refreshToken');
+    await clearTokens();
     onLogout();
   };
 
@@ -97,7 +82,12 @@ const ProfileScreen = ({ onLogout }) => {
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>My Profile</Text>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity style={styles.menuButton} onPress={() => navigation.navigate('Menu')} activeOpacity={0.84}>
+            <Ionicons name="menu" size={24} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.title}>My Profile</Text>
+        </View>
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
           <Text style={styles.logoutText}>Logout</Text>
         </TouchableOpacity>
@@ -177,6 +167,22 @@ const styles = StyleSheet.create({
     backgroundColor: '#1a1a24',
     borderBottomWidth: 1,
     borderBottomColor: '#2a2a36',
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  menuButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#23232e',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    marginRight: 12,
   },
   title: {
     fontSize: 28,

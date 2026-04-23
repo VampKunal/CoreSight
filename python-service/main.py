@@ -92,47 +92,57 @@ def analyze(req: AnalyzeRequest):
 @app.post("/analyze-video")
 async def analyze_video(file: UploadFile = File(...), userId: str = "guest", exercise: str = "general"):
     contents = await file.read()
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp:
+    suffix = os.path.splitext(file.filename or "")[1] or ".mp4"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp:
         temp.write(contents)
         temp_path = temp.name
-        
-    cap = cv2.VideoCapture(temp_path)
-    issues_set = set()
-    total_score = 0
-    frame_count = 0
-    valid_frames = 0
-    sampled_frames = []
-    latest_angles = {}
-    latest_landmarks = []
     
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
-            
-        frame_count += 1
-        if frame_count % 10 != 0: # Process 1 frame every 10 frames
-            continue
-            
-        _, buffer = cv2.imencode('.jpg', frame)
-        result = pose_analyzer.analyze(buffer.tobytes())
+    try:
+        cap = cv2.VideoCapture(temp_path)
+        if not cap.isOpened():
+            raise HTTPException(status_code=422, detail="Could not open uploaded video")
+
+        issues_set = set()
+        total_score = 0
+        frame_count = 0
+        valid_frames = 0
+        sampled_frames = []
+        latest_angles = {}
+        latest_landmarks = []
         
-        if not result.get("error"):
-            total_score += result.get("score", 0)
-            issues_set.update(result.get("issues", []))
-            valid_frames += 1
-            latest_angles = result.get("angles", {})
-            latest_landmarks = result.get("landmarks", [])
-            sampled_frames.append({
-                "frame": frame_count,
-                "score": result.get("score", 0),
-                "issues": result.get("issues", []),
-                "angles": result.get("angles", {}),
-                "landmarks": result.get("landmarks", [])
-            })
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+                
+            frame_count += 1
+            if frame_count % 10 != 0: # Process 1 frame every 10 frames
+                continue
+                
+            ok, buffer = cv2.imencode('.jpg', frame)
+            if not ok:
+                continue
+
+            result = pose_analyzer.analyze(buffer.tobytes())
             
-    cap.release()
-    os.remove(temp_path)
+            if not result.get("error"):
+                total_score += result.get("score", 0)
+                issues_set.update(result.get("issues", []))
+                valid_frames += 1
+                latest_angles = result.get("angles", {})
+                latest_landmarks = result.get("landmarks", [])
+                sampled_frames.append({
+                    "frame": frame_count,
+                    "score": result.get("score", 0),
+                    "issues": result.get("issues", []),
+                    "angles": result.get("angles", {}),
+                    "landmarks": result.get("landmarks", [])
+                })
+                
+        cap.release()
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
     
     if valid_frames == 0:
         return {"sessionId": str(uuid.uuid4()), "score": 0, "issues": ["Could not process video or no person detected"], "angles": {}, "landmarks": [], "frames": [], "queued": False}

@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getApiBaseUrl } from '../services/apiConfig';
 import { Ionicons } from '@expo/vector-icons';
+import { apiFetch } from '../services/apiClient';
 
 const DietScreen = ({ navigation }) => {
   const [plans, setPlans] = useState([]);
@@ -16,14 +15,8 @@ const DietScreen = ({ navigation }) => {
   const fetchDietPlans = async () => {
     try {
       setLoading(true);
-      const token = await AsyncStorage.getItem('accessToken');
-      const response = await fetch(`${getApiBaseUrl()}/api/diet/`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await response.json();
-      if (response.ok) {
-        setPlans(data.data || []);
-      }
+      const data = await apiFetch('/api/diet/');
+      setPlans(data.data || []);
     } catch (error) {
       console.error(error);
     } finally {
@@ -34,31 +27,18 @@ const DietScreen = ({ navigation }) => {
   const generateNewPlan = async () => {
     try {
       setGenerating(true);
-      const token = await AsyncStorage.getItem('accessToken');
-      const response = await fetch(`${getApiBaseUrl()}/api/diet/generate`, {
+      const data = await apiFetch('/api/diet/generate', {
         method: 'POST',
-        headers: { 
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json' 
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}), 
       });
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        if (data.onboardingRequired) {
-          Alert.alert('Profile Incomplete', data.message, [
-            { text: 'Go to Profile', onPress: () => navigation.navigate('Profile') }
-          ]);
-          return;
-        }
-        throw new Error(data.message || 'Failed to generate plan');
-      }
-      
+      void data;
       fetchDietPlans();
     } catch (error) {
-      Alert.alert('Error', error.message);
+      const isProfileIssue = error.message?.toLowerCase().includes('profile') || error.message?.toLowerCase().includes('onboarding');
+      Alert.alert(isProfileIssue ? 'Profile incomplete' : 'Error', error.message, isProfileIssue ? [
+        { text: 'Go to Profile', onPress: () => navigation.navigate('Profile') },
+      ] : undefined);
     } finally {
       setGenerating(false);
     }
@@ -83,9 +63,14 @@ const DietScreen = ({ navigation }) => {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <View>
-          <Text style={styles.kicker}>Gemini 3 Flash</Text>
-          <Text style={styles.title}>Diet Plan</Text>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity style={styles.menuButton} onPress={() => navigation.navigate('Menu')} activeOpacity={0.84}>
+            <Ionicons name="menu" size={24} color="#fff" />
+          </TouchableOpacity>
+          <View>
+            <Text style={styles.kicker}>Gemini 2.5 Flash</Text>
+            <Text style={styles.title}>Diet Plan</Text>
+          </View>
         </View>
         <TouchableOpacity style={styles.generateButton} onPress={generateNewPlan} disabled={generating}>
           {generating ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.generateButtonText}>Generate</Text>}
@@ -132,6 +117,23 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#2a2a36',
   },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    paddingRight: 10,
+  },
+  menuButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#23232e',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    marginRight: 12,
+  },
   kicker: {
     color: '#e85d2a',
     fontSize: 12,
@@ -141,15 +143,17 @@ const styles = StyleSheet.create({
     marginBottom: 3,
   },
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
+    fontSize: 24,
+    fontWeight: '900',
     color: '#fff',
   },
   generateButton: {
     backgroundColor: '#e85d2a',
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 14,
+    minWidth: 96,
+    alignItems: 'center',
   },
   generateButtonText: {
     color: '#fff',

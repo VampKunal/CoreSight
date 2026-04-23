@@ -2,7 +2,30 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const logger = require('../utils/logger');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3-flash';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const GEMINI_FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-2.5-flash-lite';
+
+const getModel = (modelName, temperature) => genAI.getGenerativeModel({
+    model: modelName,
+    generationConfig: { responseMimeType: "application/json", temperature }
+});
+
+const generateJsonWithFallback = async (prompt, temperature, label) => {
+    const models = [...new Set([GEMINI_MODEL, GEMINI_FALLBACK_MODEL])];
+    let lastError;
+
+    for (const modelName of models) {
+        try {
+            const result = await getModel(modelName, temperature).generateContent(prompt);
+            return JSON.parse(result.response.text());
+        } catch (err) {
+            lastError = err;
+            logger.error(`${label} failed`, { model: modelName, error: err.message });
+        }
+    }
+
+    throw lastError;
+};
 
 /**
  * Given a list of posture issues, return targeted correction suggestions.
@@ -26,12 +49,7 @@ Focus on:
 Keep each tip under 3 sentences. Return ONLY a JSON array of strings.`;
 
     try {
-        const model = genAI.getGenerativeModel({ 
-            model: GEMINI_MODEL,
-            generationConfig: { responseMimeType: "application/json", temperature: 0.4 }
-        });
-        const result = await model.generateContent(prompt);
-        const raw = JSON.parse(result.response.text());
+        const raw = await generateJsonWithFallback(prompt, 0.4, 'LLM posture suggestion');
         return Array.isArray(raw) ? raw : (Array.isArray(raw.suggestions) ? raw.suggestions : Object.values(raw));
     } catch (err) {
         logger.error('LLM posture suggestion failed', { error: err.message });
@@ -62,12 +80,7 @@ Return a JSON object with:
   Each meal: name (string), calories (number), protein (g), carbs (g), fat (g), time (string), notes (string - explain why this fits their specific goal/condition).`;
 
     try {
-        const model = genAI.getGenerativeModel({ 
-            model: GEMINI_MODEL,
-            generationConfig: { responseMimeType: "application/json", temperature: 0.5 }
-        });
-        const result = await model.generateContent(prompt);
-        const raw = JSON.parse(result.response.text());
+        const raw = await generateJsonWithFallback(prompt, 0.5, 'LLM diet plan generation');
         
         // Return structured object
         return {
