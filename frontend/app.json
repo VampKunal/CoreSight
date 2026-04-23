@@ -6,14 +6,24 @@
     "orientation": "portrait",
     "plugins": [
       "expo-camera",
-      "expo-font"
+      "expo-font",
+      "expo-secure-store",
+      "expo-splash-screen"
     ],
     "extra": {
       "apiServicePort": "5000",
       "postureServicePort": "8000",
-      "apiBaseUrl": "",
-      "postureBaseUrl": "",
-      "postureWsUrl": ""
+      "apiBaseUrl": "http://192.168.0.102:5000",
+      "postureBaseUrl": "http://192.168.0.102:8000",
+      "postureWsUrl": "ws://192.168.0.102:8000",
+      "firebase": {
+        "apiKey": "AIzaSyB_mIq_vMQFWM0XBlXmdQ71i3FlWMdfD2Y",
+        "authDomain": "idearoom-88457.firebaseapp.com",
+        "projectId": "idearoom-88457",
+        "storageBucket": "idearoom-88457.firebasestorage.app",
+        "messagingSenderId": "701879298775",
+        "appId": "1:701879298775:web:c095b033c1954f9e0a1e92"
+      }
     },
     "android": {
       "permissions": [

@@ -1,237 +1,363 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { apiFetch } from '../services/apiClient';
-import { clearTokens } from '../services/authService';
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 
-const ProfileScreen = ({ navigation, onLogout }) => {
-  const [profile, setProfile] = useState({
-    age: '',
-    weight: '',
-    height: '',
-    goals: '',
-    healthConditions: ''
-  });
+import AppShell from "../components/AppShell";
+import FormField from "../components/FormField";
+import PrimaryButton from "../components/PrimaryButton";
+import ScreenHeader from "../components/ScreenHeader";
+import { useAuth } from "../context/AuthContext";
+import { openAppDrawer } from "../navigation/drawer";
+import { apiFetch } from "../services/apiClient";
+import { COLORS, TYPOGRAPHY } from "../theme";
+
+const initialProfile = {
+  age: "",
+  weight: "",
+  height: "",
+  goals: "",
+  healthConditions: "",
+};
+
+const parseList = (value) =>
+  value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+const ProfileScreen = ({ navigation }) => {
+  const { signOut } = useAuth();
+  const [profile, setProfile] = useState(initialProfile);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [message, setMessage] = useState("");
 
-  useEffect(() => {
-    fetchProfile();
+  const completion = useMemo(() => {
+    const values = Object.values(profile);
+    const filled = values.filter((value) => value.trim()).length;
+    return Math.round((filled / values.length) * 100);
+  }, [profile]);
+
+  const updateField = useCallback((field, value) => {
+    setProfile((current) => ({ ...current, [field]: value }));
+    setErrors((current) => ({ ...current, [field]: "" }));
   }, []);
 
-  const fetchProfile = async () => {
+  const fetchProfile = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await apiFetch('/api/profile/me');
+      const data = await apiFetch("/api/profile/me");
       if (data) {
         setProfile({
-          age: data.age?.toString() || '',
-          weight: data.weight?.toString() || '',
-          height: data.height?.toString() || '',
-          goals: data.goals?.join(', ') || '',
-          healthConditions: data.healthConditions?.join(', ') || ''
+          age: data.age?.toString() || "",
+          weight: data.weight?.toString() || "",
+          height: data.height?.toString() || "",
+          goals: data.goals?.join(", ") || "",
+          healthConditions: data.healthConditions?.join(", ") || "",
         });
       }
     } catch (error) {
-      console.log('Error fetching profile', error);
+      setMessage(
+        "Profile data could not be loaded. You can still fill it in and save.",
+      );
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const saveProfile = async () => {
+  useEffect(() => {
+    fetchProfile();
+  }, [fetchProfile]);
+
+  const validateProfile = useCallback(() => {
+    const nextErrors = {};
+    const age = Number(profile.age);
+    const weight = Number(profile.weight);
+    const height = Number(profile.height);
+
+    if (!age || age < 12 || age > 100) {
+      nextErrors.age = "Enter an age between 12 and 100.";
+    }
+
+    if (!weight || weight < 25 || weight > 250) {
+      nextErrors.weight = "Enter weight in kg between 25 and 250.";
+    }
+
+    if (!height || height < 90 || height > 240) {
+      nextErrors.height = "Enter height in cm between 90 and 240.";
+    }
+
+    if (!parseList(profile.goals).length) {
+      nextErrors.goals = "Add at least one goal.";
+    }
+
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  }, [profile]);
+
+  const saveProfile = useCallback(async () => {
+    setMessage("");
+
+    if (!validateProfile()) {
+      return;
+    }
+
     try {
       setSaving(true);
       const payload = {
-        age: parseInt(profile.age) || 0,
-        weight: parseInt(profile.weight) || 0,
-        height: parseInt(profile.height) || 0,
-        goals: profile.goals.split(',').map(g => g.trim()).filter(Boolean),
-        healthConditions: profile.healthConditions.split(',').map(h => h.trim()).filter(Boolean),
+        age: Number(profile.age),
+        weight: Number(profile.weight),
+        height: Number(profile.height),
+        goals: parseList(profile.goals),
+        healthConditions: parseList(profile.healthConditions),
         onboardingCompleted: true,
-        activityLevel: 'moderately-active', // Defaulting for now
-        gender: 'prefer-not-to-say'
+        activityLevel: "moderately-active",
+        gender: "prefer-not-to-say",
       };
 
-      await apiFetch('/api/profile/update', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+      await apiFetch("/api/profile/update", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
-      Alert.alert('Saved', 'Profile saved successfully.');
+      setMessage("Profile saved. Diet generation can use this data now.");
     } catch (error) {
-      Alert.alert('Error', error.message);
+      setMessage(error.message || "Could not save your profile.");
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleLogout = async () => {
-    await clearTokens();
-    onLogout();
-  };
+  }, [profile, validateProfile]);
 
   if (loading) {
     return (
-      <View style={[styles.container, { justifyContent: 'center' }]}>
-        <ActivityIndicator size="large" color="#ff6b00" />
-      </View>
+      <AppShell>
+        <View style={styles.loadingState}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Loading profile</Text>
+        </View>
+      </AppShell>
     );
   }
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <TouchableOpacity style={styles.menuButton} onPress={() => navigation.navigate('Menu')} activeOpacity={0.84}>
-            <Ionicons name="menu" size={24} color="#fff" />
-          </TouchableOpacity>
-          <Text style={styles.title}>My Profile</Text>
+    <AppShell>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <ScreenHeader
+          kicker="Profile data"
+          title="Your profile"
+          subtitle="Keep this current so diet plans and posture sessions match your goals."
+          onMenu={() => openAppDrawer(navigation)}
+          right={
+            <PrimaryButton
+              label="Logout"
+              icon="logout"
+              variant="secondary"
+              onPress={signOut}
+              style={styles.logoutButton}
+              textStyle={styles.logoutText}
+            />
+          }
+        />
+
+        <View style={styles.summaryCard}>
+          <View>
+            <Text style={styles.kicker}>Completion</Text>
+            <Text style={styles.summaryTitle}>{completion}% ready</Text>
+            <Text style={styles.summaryText}>
+              Age, body metrics, goals, and conditions feed your
+              recommendations.
+            </Text>
+          </View>
+          <View style={styles.progressRing}>
+            <Text style={styles.progressText}>{completion}</Text>
+          </View>
         </View>
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Text style={styles.logoutText}>Logout</Text>
-        </TouchableOpacity>
-      </View>
-      <View style={styles.content}>
-        <Text style={styles.info}>
-          Complete your profile so our AI can generate personalized diet plans for you.
-        </Text>
-        
-        <Text style={styles.label}>Age</Text>
-        <TextInput 
-          style={styles.input} 
-          placeholder="e.g. 25" 
-          placeholderTextColor="#666" 
-          keyboardType="numeric"
-          value={profile.age}
-          onChangeText={(text) => setProfile({...profile, age: text})}
-        />
-        
-        <Text style={styles.label}>Weight (kg)</Text>
-        <TextInput 
-          style={styles.input} 
-          placeholder="e.g. 70" 
-          placeholderTextColor="#666" 
-          keyboardType="numeric"
-          value={profile.weight}
-          onChangeText={(text) => setProfile({...profile, weight: text})}
-        />
 
-        <Text style={styles.label}>Height (cm)</Text>
-        <TextInput 
-          style={styles.input} 
-          placeholder="e.g. 175" 
-          placeholderTextColor="#666" 
-          keyboardType="numeric"
-          value={profile.height}
-          onChangeText={(text) => setProfile({...profile, height: text})}
-        />
+        {message ? (
+          <View style={styles.notice}>
+            <Ionicons
+              name="information-circle-outline"
+              size={21}
+              color={COLORS.secondary}
+            />
+            <Text style={styles.noticeText}>{message}</Text>
+          </View>
+        ) : null}
 
-        <Text style={styles.label}>Goals (comma separated)</Text>
-        <TextInput 
-          style={styles.input} 
-          placeholder="e.g. Muscle Gain, Fat Loss" 
-          placeholderTextColor="#666" 
-          value={profile.goals}
-          onChangeText={(text) => setProfile({...profile, goals: text})}
-        />
+        <View style={styles.formCard}>
+          <View style={styles.row}>
+            <FormField
+              label="Age"
+              placeholder="25"
+              keyboardType="numeric"
+              value={profile.age}
+              onChangeText={(text) => updateField("age", text)}
+              error={errors.age}
+              style={styles.halfField}
+            />
+            <FormField
+              label="Weight"
+              placeholder="70 kg"
+              keyboardType="numeric"
+              value={profile.weight}
+              onChangeText={(text) => updateField("weight", text)}
+              error={errors.weight}
+              style={styles.halfField}
+            />
+          </View>
 
-        <Text style={styles.label}>Health Conditions / Allergies</Text>
-        <TextInput 
-          style={styles.input} 
-          placeholder="e.g. Peanut allergy, hypertension" 
-          placeholderTextColor="#666" 
-          value={profile.healthConditions}
-          onChangeText={(text) => setProfile({...profile, healthConditions: text})}
-        />
+          <FormField
+            label="Height (cm)"
+            placeholder="175"
+            keyboardType="numeric"
+            value={profile.height}
+            onChangeText={(text) => updateField("height", text)}
+            error={errors.height}
+            style={styles.field}
+          />
+          <FormField
+            label="Goals"
+            placeholder="Muscle gain, fat loss"
+            value={profile.goals}
+            onChangeText={(text) => updateField("goals", text)}
+            error={errors.goals}
+            style={styles.field}
+          />
+          <FormField
+            label="Health conditions / allergies"
+            placeholder="Peanut allergy, hypertension"
+            value={profile.healthConditions}
+            onChangeText={(text) => updateField("healthConditions", text)}
+            error={errors.healthConditions}
+            multiline
+            style={styles.field}
+          />
 
-        <TouchableOpacity style={styles.saveButton} onPress={saveProfile} disabled={saving}>
-          {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>Save Profile</Text>}
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+          <PrimaryButton
+            label="Save profile"
+            icon="content-save-outline"
+            onPress={saveProfile}
+            loading={saving}
+            style={styles.saveButton}
+          />
+        </View>
+      </ScrollView>
+    </AppShell>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  content: {
+    paddingBottom: 28,
+  },
+  loadingState: {
     flex: 1,
-    backgroundColor: '#0d0d12',
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    paddingTop: 60,
-    backgroundColor: '#1a1a24',
-    borderBottomWidth: 1,
-    borderBottomColor: '#2a2a36',
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  menuButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#23232e',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    marginRight: 12,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#fff',
+  loadingText: {
+    color: COLORS.textSecondary,
+    marginTop: 12,
+    fontWeight: "800",
   },
   logoutButton: {
-    padding: 8,
-    backgroundColor: '#2a2a36',
-    borderRadius: 8,
+    minHeight: 42,
+    borderRadius: 13,
+    paddingHorizontal: 12,
   },
   logoutText: {
-    color: '#ff4444',
-    fontWeight: 'bold',
+    color: COLORS.text,
+    fontSize: 13,
   },
-  content: {
-    padding: 20,
-  },
-  info: {
-    color: '#aaa',
-    marginBottom: 24,
-    lineHeight: 20,
-  },
-  label: {
-    color: '#fff',
-    marginBottom: 8,
-    fontWeight: '600',
-  },
-  input: {
-    backgroundColor: '#1a1a24',
-    color: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+  summaryCard: {
+    marginHorizontal: 18,
+    padding: 18,
+    borderRadius: 22,
+    backgroundColor: COLORS.surface,
     borderWidth: 1,
-    borderColor: '#333',
+    borderColor: COLORS.border,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  kicker: TYPOGRAPHY.kicker,
+  summaryTitle: {
+    color: COLORS.text,
+    fontSize: 26,
+    fontWeight: "900",
+    marginTop: 5,
+    fontVariant: ["tabular-nums"],
+  },
+  summaryText: {
+    ...TYPOGRAPHY.body,
+    maxWidth: 230,
+    marginTop: 6,
+  },
+  progressRing: {
+    width: 74,
+    height: 74,
+    borderRadius: 22,
+    borderWidth: 2,
+    borderColor: COLORS.secondary,
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: "auto",
+  },
+  progressText: {
+    color: COLORS.secondary,
+    fontSize: 23,
+    fontWeight: "900",
+    fontVariant: ["tabular-nums"],
+  },
+  notice: {
+    margin: 18,
+    marginBottom: 0,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: COLORS.surfaceHigh,
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  noticeText: {
+    flex: 1,
+    color: COLORS.text,
+    lineHeight: 20,
+    marginLeft: 10,
+    fontWeight: "700",
+  },
+  formCard: {
+    margin: 18,
+    padding: 18,
+    borderRadius: 22,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  row: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  halfField: {
+    flex: 1,
+    marginBottom: 14,
+  },
+  field: {
+    marginBottom: 14,
   },
   saveButton: {
-    backgroundColor: '#ff6b00',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 16,
+    marginTop: 4,
   },
-  saveButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16,
-  }
 });
 
 export default ProfileScreen;

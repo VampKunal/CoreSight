@@ -1,10 +1,15 @@
 node_modules
+.expo/
+frontend/.expo/
+frontend/android/.gradle/
 .env
 .env.local
 .env.development
 .env.example
 .env.test
 logs    
+api-service/logs/
+expo-dev*.log
 .env.production
 dist/
 build/

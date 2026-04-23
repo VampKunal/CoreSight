@@ -1,10 +1,14 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getApiBaseUrl } from './apiConfig';
+import { getApiBaseUrl } from "./apiConfig";
+import {
+  secureDeleteItem,
+  secureGetItem,
+  secureSetItem,
+} from "./secureStorage";
 
 export const getStoredTokens = async () => {
   const [accessToken, refreshToken] = await Promise.all([
-    AsyncStorage.getItem('accessToken'),
-    AsyncStorage.getItem('refreshToken'),
+    secureGetItem("accessToken"),
+    secureGetItem("refreshToken"),
   ]);
 
   return { accessToken, refreshToken };
@@ -12,18 +16,18 @@ export const getStoredTokens = async () => {
 
 export const saveTokens = async ({ accessToken, refreshToken }) => {
   if (accessToken) {
-    await AsyncStorage.setItem('accessToken', accessToken);
+    await secureSetItem("accessToken", accessToken);
   }
 
   if (refreshToken) {
-    await AsyncStorage.setItem('refreshToken', refreshToken);
+    await secureSetItem("refreshToken", refreshToken);
   }
 };
 
 export const clearTokens = async () => {
   await Promise.all([
-    AsyncStorage.removeItem('accessToken'),
-    AsyncStorage.removeItem('refreshToken'),
+    secureDeleteItem("accessToken"),
+    secureDeleteItem("refreshToken"),
   ]);
 };
 
@@ -31,12 +35,12 @@ export const refreshAccessToken = async () => {
   const { refreshToken } = await getStoredTokens();
 
   if (!refreshToken) {
-    throw new Error('Session expired. Please sign in again.');
+    throw new Error("Session expired. Please sign in again.");
   }
 
   const response = await fetch(`${getApiBaseUrl()}/api/auth/refresh`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ token: refreshToken }),
   });
 
@@ -44,7 +48,7 @@ export const refreshAccessToken = async () => {
 
   if (!response.ok) {
     await clearTokens();
-    throw new Error(data.message || 'Session expired. Please sign in again.');
+    throw new Error(data.message || "Session expired. Please sign in again.");
   }
 
   await saveTokens(data);
