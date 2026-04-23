@@ -2,6 +2,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const logger = require('../utils/logger');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3-flash';
 
 /**
  * Given a list of posture issues, return targeted correction suggestions.
@@ -26,7 +27,7 @@ Keep each tip under 3 sentences. Return ONLY a JSON array of strings.`;
 
     try {
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-1.5-flash",
+            model: GEMINI_MODEL,
             generationConfig: { responseMimeType: "application/json", temperature: 0.4 }
         });
         const result = await model.generateContent(prompt);
@@ -62,7 +63,7 @@ Return a JSON object with:
 
     try {
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-1.5-flash",
+            model: GEMINI_MODEL,
             generationConfig: { responseMimeType: "application/json", temperature: 0.5 }
         });
         const result = await model.generateContent(prompt);
@@ -80,4 +81,3 @@ Return a JSON object with:
 };
 
 module.exports = { getPostureSuggestions, generateDietPlan };
-

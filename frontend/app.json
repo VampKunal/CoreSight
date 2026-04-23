@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "FitTrackApp",
+    "slug": "fittrack-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "plugins": [
+      "expo-camera",
+      "expo-font"
+    ],
+    "extra": {
+      "apiServicePort": "5000",
+      "postureServicePort": "8000",
+      "apiBaseUrl": "",
+      "postureBaseUrl": "",
+      "postureWsUrl": ""
+    },
+    "android": {
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.anonymous.fittrackapp"
+    }
+  }
+}

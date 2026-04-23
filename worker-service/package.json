@@ -12,7 +12,7 @@
   "type": "commonjs",
   "dependencies": {
     "amqplib": "^1.0.3",
-    "axios": "^1.15.0",
+    "axios": "^1.15.1",
     "winston": "^3.19.0"
   }
 }
