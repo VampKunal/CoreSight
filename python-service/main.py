@@ -2,6 +2,8 @@ import base64
 import logging
 import os
 import uuid
+import time
+import asyncio
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
@@ -169,6 +171,7 @@ async def ws_analyze(websocket: WebSocket, userId: str, exercise: str = "general
     logger.info(f"WebSocket connected for user {userId}, exercise {exercise}")
     
     session_id = str(uuid.uuid4())
+    last_publish_time = 0
     
     try:
         while True:
@@ -181,8 +184,8 @@ async def ws_analyze(websocket: WebSocket, userId: str, exercise: str = "general
                 await websocket.send_json({"error": "Invalid base64 frame"})
                 continue
                 
-            # Analyze frame
-            result = pose_analyzer.analyze(frame_bytes)
+            # Analyze frame synchronously but in a separate thread to prevent blocking
+            result = await asyncio.to_thread(pose_analyzer.analyze, frame_bytes)
             
             # Send immediate feedback to client for the UI
             response = {
@@ -197,18 +200,20 @@ async def ws_analyze(websocket: WebSocket, userId: str, exercise: str = "general
             
             # Process and queue in background if there's a valid pose
             if not result.get("error"):
-                payload = {
-                    "sessionId": session_id,
-                    "userId": userId,
-                    "exercise": exercise,
-                    **result
-                }
-                # To prevent flooding RabbitMQ, we could add a throttle here, 
-                # but for now we publish every processed frame.
-                try:
-                    queue_publisher.publish(payload)
-                except Exception as e:
-                    logger.error(f"WebSocket queue publish failed: {e}")
+                current_time = time.time()
+                # Throttle publishing to RabbitMQ to once per second
+                if current_time - last_publish_time > 1.0:
+                    payload = {
+                        "sessionId": session_id,
+                        "userId": userId,
+                        "exercise": exercise,
+                        **result
+                    }
+                    try:
+                        queue_publisher.publish(payload)
+                        last_publish_time = current_time
+                    except Exception as e:
+                        logger.error(f"WebSocket queue publish failed: {e}")
                     
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected for user {userId}")

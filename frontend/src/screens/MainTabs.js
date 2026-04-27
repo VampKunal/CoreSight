@@ -10,6 +10,7 @@ import { MaterialCommunityIcons as Icon } from "@expo/vector-icons";
 
 import AppShell from "../components/AppShell";
 import RealTimeCamera from "./RealTimeCamera";
+import CommunityScreen from "./CommunityScreen";
 import DietScreen from "./DietScreen";
 import ProfileScreen from "./ProfileScreen";
 import { useAuth } from "../context/AuthContext";
@@ -27,6 +28,12 @@ const CameraStack = () => (
 const DietStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="DietHome" component={DietScreen} />
+  </Stack.Navigator>
+);
+
+const CommunityStack = () => (
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Screen name="CommunityHome" component={CommunityScreen} />
   </Stack.Navigator>
 );
 
@@ -81,6 +88,16 @@ const MainTabs = () => {
           drawerLabel: "Camera analysis",
           drawerIcon: ({ color, size }) => (
             <Icon name="camera-outline" color={color} size={size} />
+          ),
+        }}
+      />
+      <Drawer.Screen
+        name="Community"
+        component={CommunityStack}
+        options={{
+          drawerLabel: "Community",
+          drawerIcon: ({ color, size }) => (
+            <Icon name="reddit" color={color} size={size} />
           ),
         }}
       />

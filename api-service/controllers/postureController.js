@@ -12,6 +12,23 @@ const ingestSession = async (req, res, next) => {
     try {
         const { sessionId, userId, exercise, score, angles, issues, landmarks } = req.body;
 
+        let session = await PostureSession.findOne({ sessionId });
+        
+        if (session) {
+            // Update existing session
+            session.score = score;
+            session.angles = angles;
+            session.landmarks = landmarks;
+            
+            const newIssues = issues.filter(i => !session.issues.includes(i));
+            if (newIssues.length > 0) {
+                session.issues.push(...newIssues);
+            }
+            
+            await session.save();
+            return res.status(200).json({ message: 'Session updated', sessionId });
+        }
+
         // Fetch user context for better suggestions
         const user = await User.findById(userId);
         const userProfile = user ? { 
@@ -23,7 +40,7 @@ const ingestSession = async (req, res, next) => {
         // Call LLM for human-readable suggestions
         const suggestions = await getPostureSuggestions(issues, exercise, userProfile);
 
-        const session = new PostureSession({
+        session = new PostureSession({
             sessionId,
             userId,
             exercise,

@@ -13,9 +13,6 @@
     "extra": {
       "apiServicePort": "5000",
       "postureServicePort": "8000",
-      "apiBaseUrl": "http://192.168.0.102:5000",
-      "postureBaseUrl": "http://192.168.0.102:8000",
-      "postureWsUrl": "ws://192.168.0.102:8000",
       "firebase": {
         "apiKey": "AIzaSyB_mIq_vMQFWM0XBlXmdQ71i3FlWMdfD2Y",
         "authDomain": "idearoom-88457.firebaseapp.com",
